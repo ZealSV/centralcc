@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 import sqlalchemy
 from src import database as db
-from src.api.bottler import mixed_potions_amount
 
 router = APIRouter()
 
