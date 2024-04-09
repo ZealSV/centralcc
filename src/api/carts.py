@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from src.api import auth
 from enum import Enum
+import sqlalchemy
+from src import database as db
 
 router = APIRouter(
     prefix="/carts",
@@ -78,13 +80,14 @@ def post_visits(visit_id: int, customers: list[Customer]):
     Which customers visited the shop today?
     """
     print(customers)
-
+    
     return "OK"
 
 
 @router.post("/")
 def create_cart(new_cart: Customer):
     """ """
+
     return {"cart_id": 1}
 
 
