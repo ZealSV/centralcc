@@ -41,6 +41,10 @@ def get_bottle_plan():
     with db.engine.begin() as connection:
         result = connection.execute(sqlalchemy.text(sql_to_execute))
         value = result.scalar_one()
+
+    if value <= 0:
+        return []
+        
     mixed_potions_amount = value // 100
     
     return [

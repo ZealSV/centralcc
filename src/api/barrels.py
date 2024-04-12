@@ -35,6 +35,10 @@ def post_deliver_barrels(barrels_delivered: list[Barrel], order_id: int):
 @router.post("/plan")
 def get_wholesale_purchase_plan(wholesale_catalog: list[Barrel]):
     """ """
+
+    if not wholesale_catalog:
+        return []
+
     print(wholesale_catalog)
 
     sql_to_execute = "SELECT num_green_potions FROM global_inventory"
