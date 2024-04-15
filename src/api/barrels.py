@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from src.api import auth
 import sqlalchemy
@@ -26,9 +26,12 @@ def post_deliver_barrels(barrels_delivered: list[Barrel], order_id: int):
     """ """
     print(f"barrels delievered: {barrels_delivered} order_id: {order_id}")
     total_ml = sum(barrel.ml_per_barrel for barrel in barrels_delivered)
-    sql_to_execute = f"UPDATE global_inventory SET num_green_ml + {total_ml}"
-    with db.engine.begin() as connection:
-        connection.execute(sqlalchemy.text(sql_to_execute))
+    sql_to_execute = f"UPDATE global_inventory SET num_green_ml = num_green_ml + :total_ml", {"total_ml": total_ml}
+    try:
+        with db.engine.begin() as connection:
+            connection.execute(sqlalchemy.text(sql_to_execute))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to update inventory")
     return "OK"
 
 # Gets called once a day
@@ -41,10 +44,13 @@ def get_wholesale_purchase_plan(wholesale_catalog: list[Barrel]):
 
     print(wholesale_catalog)
 
-    sql_to_execute = "SELECT num_green_potions FROM global_inventory"
+    sql_to_execute = "SELECT num_green_potions, num_blue_potions, num_red_potions FROM global_inventory"
     with db.engine.begin() as connection:
         result = connection.execute(sqlalchemy.text(sql_to_execute))
-        value = result.scalar_one()
+        num_red, num_blue, num_green = result.scalar_one()
+    
+    value = num_red + num_blue + num_green
+    
     if value < 10:
         value += 1
     
