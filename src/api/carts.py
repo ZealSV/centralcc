@@ -104,9 +104,27 @@ def set_item_quantity(cart_id: int, item_sku: str, cart_item: CartItem):
 
 class CartCheckout(BaseModel):
     payment: str
+    potions_bought: dict
 
 @router.post("/{cart_id}/checkout")
 def checkout(cart_id: int, cart_checkout: CartCheckout):
-    """ """
+    """Process checkout."""
+    potions_bought = cart_checkout.potions_bought
+    total_cost = 0
+    total_potions_bought = {}
 
-    return {"total_potions_bought": 1, "total_gold_paid": 50}
+    potion_prices = {
+        "green": 50,
+        "blue": 70,
+        "red": 55
+    }
+
+    for potion_sku, quantity in potions_bought.items():
+        potion_type = potion_sku.split("_")[1]
+        if potion_type in potion_prices:
+            potion_price = potion_prices[potion_type]
+            total_cost += potion_price * quantity
+            total_potions_bought[potion_sku] = quantity
+
+    return {"total_cost": total_cost, "total_potions_bought": total_potions_bought}
+

@@ -47,17 +47,27 @@ def get_wholesale_purchase_plan(wholesale_catalog: list[Barrel]):
     sql_to_execute = "SELECT num_green_potions, num_blue_potions, num_red_potions FROM global_inventory"
     with db.engine.begin() as connection:
         result = connection.execute(sqlalchemy.text(sql_to_execute))
-        num_red, num_blue, num_green = result.scalar_one()
-    
-    value = num_red + num_blue + num_green
-    
-    if value < 10:
-        value += 1
-    
+        num_green_potions, num_blue_potions, num_red_potions = result.scalar_one()
+
+    if num_green_potions < 10:
+        num_green_potions += 1
+    elif num_blue_potions >= 10 and num_blue_potions < 20:
+        num_blue_potions += 1
+    elif num_red_potions >= 20:
+        num_red_potions += 1
+
     return [
         {
             "sku": "SMALL_GREEN_BARREL",
-            "quantity": value,
+            "quantity": num_green_potions,
+        },
+        {
+            "sku": "SMALL_BLUE_BARREL",
+            "quantity": num_blue_potions,
+        },
+        {
+            "sku": "SMALL_RED_BARREL",
+            "quantity": num_red_potions,
         }
     ]
 
