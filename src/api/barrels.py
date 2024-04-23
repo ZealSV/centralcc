@@ -25,49 +25,64 @@ class Barrel(BaseModel):
 def post_deliver_barrels(barrels_delivered: list[Barrel], order_id: int):
     """ """
     print(f"barrels delievered: {barrels_delivered} order_id: {order_id}")
-    total_ml = sum(barrel.ml_per_barrel for barrel in barrels_delivered)
-    sql_to_execute = f"UPDATE global_inventory SET num_green_ml = num_green_ml + :total_ml", {"total_ml": total_ml}
+
+    gold_spent = 0
+    red_ml = 0
+    green_ml = 0
+    blue_ml = 0
+    dark_ml = 0
+    for barrel in barrels_delivered:
+        gold_spent += barrel.price * barrel.quantity
+        if(barrel.potion_type == [1,0,0,0]):
+            red_ml += barrel.ml_per_barrel * barrel.quantity
+        elif(barrel.potion_type == [0,1,0,0]):
+            green_ml += barrel.ml_per_barrel * barrel.quantity
+        elif(barrel.potion_type == [0,0,1,0]):
+            blue_ml += barrel.ml_per_barrel * barrel.quantity
+        elif(barrel.potion_type == [0,0,0,1]):
+            dark_ml += barrel.ml_per_barrel * barrel.quantity
+        else:
+            raise Exception('Invalid potion type')
+
+    print(f"total gold spent: {gold_spent} red_ml: {red_ml} blue_ml: {blue_ml} green_ml: {green_ml} dark_ml: {dark_ml}")
+
+    sql_to_execute_1 = """INSERT INTO total_gold (gold_amt) VALUES (:gold_spent) """, [{"gold_spent": - gold_spent}]
+    sql_to_execute_2 = """INSERT INTO total_mls (red_ml_amt, green_ml_amt, blue_ml_amt, dark_ml_amt) VALUES (:red_ml, :green_ml, :blue_ml, :dark_ml) """, [{"red_ml": red_ml, "green_ml": green_ml,"blue_ml": blue_ml,"dark_ml": dark_ml}]
+
     try:
         with db.engine.begin() as connection:
-            connection.execute(sqlalchemy.text(sql_to_execute))
+            connection.execute(sqlalchemy.text(sql_to_execute_1))
+            connection.execute(sqlalchemy.text(sql_to_execute_2))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to update inventory")
     return "OK"
 
-# Gets called once a day
 @router.post("/plan")
 def get_wholesale_purchase_plan(wholesale_catalog: list[Barrel]):
-    """ """
-
-    if not wholesale_catalog:
-        return []
-
-    print(wholesale_catalog)
-
-    sql_to_execute = "SELECT num_green_potions, num_blue_potions, num_red_potions FROM global_inventory"
+    
+    sql_gold = """SELECT SUM(gold_amt) FROM total_gold"""
+    # sql_potion = """SELECT SUM(potion_amt) FROM total_potions"""
     with db.engine.begin() as connection:
-        result = connection.execute(sqlalchemy.text(sql_to_execute))
-        num_green_potions, num_blue_potions, num_red_potions = result.scalar_one()
+        total_gold = connection.execute(sqlalchemy.text(sql_gold)).scalar_one() or 0
+        # total_potion = connection.execute(sqlalchemy.text(sql_potion)).scalar_one() or 0
 
-    if num_green_potions < 10:
-        num_green_potions += 1
-    elif num_blue_potions >= 10 and num_blue_potions < 20:
-        num_blue_potions += 1
-    elif num_red_potions >= 20:
-        num_red_potions += 1
+    current_gold = total_gold
+    plan = []
+    purchased_quantities = {}
 
-    return [
-        {
-            "sku": "SMALL_GREEN_BARREL",
-            "quantity": num_green_potions,
-        },
-        {
-            "sku": "SMALL_BLUE_BARREL",
-            "quantity": num_blue_potions,
-        },
-        {
-            "sku": "SMALL_RED_BARREL",
-            "quantity": num_red_potions,
-        }
-    ]
+    sorted_catalog = sorted(wholesale_catalog, key=lambda x: x.price)
 
+    for barrel in sorted_catalog:
+        if current_gold < barrel.price or barrel.quantity <= 0:
+            continue
+
+        max_quantity = min(current_gold // barrel.price, barrel.quantity)
+
+        purchased_quantities[barrel.sku] = max_quantity
+        current_gold -= max_quantity * barrel.price
+
+    for sku, quantity in purchased_quantities.items():
+        if quantity > 0:
+            plan.append({"sku": sku, "quantity": quantity})
+
+    return plan

@@ -18,46 +18,65 @@ class PotionInventory(BaseModel):
 @router.post("/deliver/{order_id}")
 def post_deliver_bottles(potions_delivered: list[PotionInventory], order_id: int):
     """ """
+
     print(f"potions delievered: {potions_delivered} order_id: {order_id}")
-    total_ml_delivered = sum(potion.quantity for potion in potions_delivered)
-    total_ml_leftover = total_ml_delivered % 100 #figure out how to update
-    sql_to_execute = f"UPDATE global_inventory SET num_green_ml = num_green_ml % 100 - {total_ml_leftover}"
+
+    sql_to_execute_1 = """INSERT INTO total_potions (potion_amt, potion_id) SELECT :potion_amt, potions.id FROM potions WHERE potions.potion_type = :potion_type""", [{"potion_amt": potion.quantity, "potion_type": potion.potion_type}]
+    sql_to_execute_2 = """INSERT INTO total_mls (red_ml_amt, green_ml_amt, blue_ml_amt, dark_ml_amt) VALUES (:red_ml, :green_ml, :blue_ml, :dark_ml)""", [{"red_ml": - red_ml, "blue_ml": - blue_ml, "green_ml": - green_ml,"dark_ml": - dark_ml}]
+
     with db.engine.begin() as connection:
-        connection.execute(sqlalchemy.text(sql_to_execute))
+        red_ml = sum(potion.quantity * potion.potion_type[0] for potion in potions_delivered)
+        blue_ml = sum(potion.quantity * potion.potion_type[2] for potion in potions_delivered)
+        green_ml = sum(potion.quantity * potion.potion_type[1] for potion in potions_delivered)
+        dark_ml = sum(potion.quantity * potion.potion_type[3] for potion in potions_delivered)
+        total_potions = sum(potion.quantity for potion in potions_delivered)
+
+        for potion in potions_delivered:
+            connection.execute(sqlalchemy.text(sql_to_execute_1))
+            connection.execute(sqlalchemy.text(sql_to_execute_2))
+
     return "OK"
 
 @router.post("/plan")
 def get_bottle_plan():
-    """
-    Go from barrel to bottle.
-    """
-
-    # Each bottle has a quantity of what proportion of red, blue, and
-    # green potion to add.
-    # Expressed in integers from 1 to 100 that must sum up to 100.
-
-    # Initial logic: bottle all barrels into red potions.
-    sql_to_execute = "SELECT num_red_ml, num_blue_ml, num_green_ml FROM global_inventory"
-    with db.engine.begin() as connection:
-        result = connection.execute(sqlalchemy.text(sql_to_execute))
-        red_ml, blue_ml, green_ml = result.scalar_one()
-
-    if green_ml <= 0:
-        return []
-        
-    total_ml = red_ml + blue_ml + green_ml
-    mixed_potions_amount = total_ml // 100
-
-    red_proportion = (red_ml * 100) // total_ml
-    blue_proportion = (blue_ml * 100) // total_ml
-    green_proportion = (green_ml * 100) // total_ml
     
-    return [
-            {
-                "potion_type": [red_proportion, blue_proportion, green_proportion, 0],
-                "quantity": mixed_potions_amount,
-            }
-        ]
+    sql_to_execute_1 = """SELECT SUM(red_ml_amt) AS red_ml, SUM(green_ml_amt) AS green_ml, SUM(blue_ml_amt) AS blue_ml, SUM(dark_ml_amt) AS dark_ml FROM total_mls"""
+    sql_to_execute_2 = """SELECT COALESCE(SUM(potion_amt), 0) AS total_inventory FROM total_potions"""
+    sql_to_execute_3 = """SELECT p.id, p.potion_type, p.sku, COALESCE(SUM(pl.potion_amt), 0) AS inventory FROM potions p JOIN total_potions pl ON p.id = pl.potion_id GROUP BY p.id"""
+
+    with db.engine.begin() as connection:
+        total_mls = connection.execute(sqlalchemy.text(sql_to_execute_1)).first()
+        total_inventory = connection.execute(sqlalchemy.text(sql_to_execute_2)).scalar_one()
+        potions = connection.execute(sqlalchemy.text(sql_to_execute_3)).fetchall()
+
+    plan = []
+    quantity = {}
+    max_inventory = 10000
+    max_quantity_per_potion = 5
+
+    for potion in potions:
+        quantity[potion.sku] = 0
+
+    while total_inventory < max_inventory:
+        for potion in potions:
+            if total_inventory < max_inventory and potion.inventory < max_quantity_per_potion \
+                    and sum(potion.potion_type) <= total_mls.red_ml and sum(potion.potion_type[1:]) <= total_mls.green_ml \
+                    and sum(potion.potion_type[2:]) <= total_mls.blue_ml and potion.inventory < max_quantity_per_potion:
+                for i in range(len(potion.potion_type)):
+                    total_mls[i] -= potion.potion_type[i]
+                quantity[potion.sku] += 1
+                potion.inventory += 1
+                total_inventory += 1
+
+    for potion in potions:
+        if quantity[potion.sku] != 0:
+            plan.append({
+                "potion_type": potion.potion_type,
+                "quantity": quantity[potion.sku]
+            })
+
+    return plan
+
 
 if __name__ == "__main__":
     print(get_bottle_plan())
