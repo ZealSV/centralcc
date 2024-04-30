@@ -87,9 +87,16 @@ def post_visits(visit_id: int, customers: list[Customer]):
 @router.post("/")
 def create_cart(new_cart: Customer):
     """ """
+    sql_to_execute = """
+        INSERT INTO carts (customer_name)
+        VALUES (:customer_name)
+        RETURNING cart_id
+    """
+    params = {"customer_name": new_cart.customer_name}
+    with db.engine.begin() as connection:
+        id = connection.execute(sqlalchemy.text(sql_to_execute), params).scalar_one()
 
-    return {"cart_id": 1}
-
+    return {'cart_id': id}
 
 class CartItem(BaseModel):
     quantity: int
@@ -98,7 +105,16 @@ class CartItem(BaseModel):
 @router.post("/{cart_id}/items/{item_sku}")
 def set_item_quantity(cart_id: int, item_sku: str, cart_item: CartItem):
     """ """
+    
+    sql_to_execute = """
+        INSERT INTO cart_items (cart_id, quantity, potion_id) 
+        SELECT :cart_id, :quantity, potions.id 
+        FROM potions WHERE potions.sku = :item_sku
+    """
+    params = {"cart_id": cart_id, "quantity": cart_item.quantity, "item_sku": item_sku}
 
+    with db.engine.begin() as connection:
+        connection.execute(sqlalchemy.text(sql_to_execute), params)
     return "OK"
 
 
@@ -109,22 +125,34 @@ class CartCheckout(BaseModel):
 @router.post("/{cart_id}/checkout")
 def checkout(cart_id: int, cart_checkout: CartCheckout):
     """Process checkout."""
-    potions_bought = cart_checkout.potions_bought
-    total_cost = 0
-    total_potions_bought = {}
+    sql1 = """
+        SELECT SUM(quantity) AS tot_potions
+        FROM cart_items
+        WHERE cart_id = :cart_id
+    """
+    sql2 = """
+        SELECT SUM(quantity*price) AS tot_gold
+        FROM cart_items
+        JOIN potions ON potions.id = cart_items.potion_id
+        WHERE cart_id = :cart_id
+    """
+    sql3 = """
+        INSERT INTO total_potions (potion_change, potion_id)
+        SELECT (cart_items.quantity * -1), cart_items.potion_id
+        FROM cart_items
+        WHERE cart_items.cart_id = :cart_id
+    """
+    sql4 = """
+        INSERT INTO total_gold (gold_change) 
+        VALUES (:gold_paid)
+    """
+    cartparam = {"cart_id": cart_id}
+    goldparam = {"gold_paid": tot_gold}
+    
+    with db.engine.begin() as connection:
+        tot_potions = connection.execute(sqlalchemy.text(sql1), cartparam).scalar_one()
+        tot_gold = connection.execute(sqlalchemy.text(sql2), cartparam).scalar_one()
+        connection.execute(sqlalchemy.text(sql3), cartparam)
+        connection.execute(sqlalchemy.text(sql4), goldparam)
 
-    potion_prices = {
-        "green": 50,
-        "blue": 70,
-        "red": 55
-    }
-
-    for potion_sku, quantity in potions_bought.items():
-        potion_type = potion_sku.split("_")[1]
-        if potion_type in potion_prices:
-            potion_price = potion_prices[potion_type]
-            total_cost += potion_price * quantity
-            total_potions_bought[potion_sku] = quantity
-
-    return {"total_cost": total_cost, "total_potions_bought": total_potions_bought}
-
+    return {"total_potions_bought": tot_potions, "total_gold_paid": tot_gold}
