@@ -53,21 +53,67 @@ def search_orders(
     Your results must be paginated, the max results you can return at any
     time is 5 total line items.
     """
+    result = []
+    
+    if sort_col is search_sort_options.customer_name:
+        order_by = db.carts.c.customer_name
+    elif sort_col == search_sort_options.item_sku:
+        order_by = db.potions.c.sku
+    elif sort_col == search_sort_options.line_item_total:
+        order_by = db.cart_items.c.quantity
+    elif sort_col is search_sort_options.timestamp:
+        order_by = db.cart_items.c.created_at
+    else:
+        assert False
+
+    order_by = order_by.asc() if sort_order == search_sort_order.asc else order_by.desc()
+
+    search_page = int(search_page) if search_page.isdigit() else 0
+
+    sql1 = (sqlalchemy.select(
+            db.carts.c.customer_name.label("customer_name"),
+            db.cart_items.c.cart_id.label("cart_id"),
+            db.potions.c.sku.label("sku"),
+            (db.cart_items.c.quantity * db.potions.c.price).label("total_price"),
+            db.cart_items.c.created_at.label("created_at"),
+        )
+        .select_from(db.cart_items)
+        .join(db.carts, db.carts.c.cart_id == db.cart_items.c.cart_id)
+        .join(db.potions, db.potions.c.id == db.cart_items.c.potion_id)
+        .offset(search_page * 5)
+        .order_by(order_by)
+    )
+
+    if customer_name:
+        sql1 = sql1.where(db.carts.c.customer_name.ilike(f"%{customer_name}%"))
+
+    if potion_sku:
+        sql1 = sql1.where(db.potions.c.sku.ilike(f"%{potion_sku}%"))
+
+    with db.engine.connect() as conn:
+        result = conn.execute(sql1)
+        for idx, row in enumerate(result, start=search_page * 5):
+            result.append(
+                {
+                    "line_item_id": idx,
+                    "item_sku": row.sku,
+                    "customer_name": row.customer_name,
+                    "line_item_total": row.total_price,
+                    "timestamp": row.created_at,
+                }
+            )
+
+    prev = str(search_page - 1) if search_page > 0 else ""
+    next = str(search_page + 1) if len(result) >= 5 else ""
 
     return {
-        "previous": "",
-        "next": "",
-        "results": [
-            {
-                "line_item_id": 1,
-                "item_sku": "1 oblivion potion",
-                "customer_name": "Scaramouche",
-                "line_item_total": 50,
-                "timestamp": "2021-01-01T00:00:00Z",
-            }
-        ],
+        "previous": prev,
+        "next": next,
+        "result": result,
     }
 
+class NewCart(BaseModel):
+    customer_name: str
 
 class Customer(BaseModel):
     customer_name: str
