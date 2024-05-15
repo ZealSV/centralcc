@@ -9,7 +9,7 @@ def get_catalog():
     """
     Each unique item combination must have only a single price.
     """
-    sql_to_execute = """SELECT sku, SUM(potion_ledger.potion_change) AS inventory, price, potion_type FROM potions JOIN potion_ledger ON potion_ledger.potion_id = potions.id GROUP BY potions.id"""
+    sql_to_execute = """SELECT sku, SUM(total_potions.potion_change) AS inventory, price, potion_type FROM potions JOIN total_potions ON total_potions.potion_id = potions.id GROUP BY potions.id"""
     with db.engine.begin() as connection:
         result = connection.execute(sqlalchemy.text(sql_to_execute))
     catalog = []
