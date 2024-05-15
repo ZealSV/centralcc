@@ -183,13 +183,13 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
         WHERE cart_id = :cart_id
     """
     sql3 = """
-        INSERT INTO total_potions (potion_change, potion_id)
+        INSERT INTO total_potions (potion_amt, potion_id)
         SELECT (cart_items.quantity * -1), cart_items.potion_id
         FROM cart_items
         WHERE cart_items.cart_id = :cart_id
     """
     sql4 = """
-        INSERT INTO total_gold (gold_change) 
+        INSERT INTO total_gold (gold_amt) 
         VALUES (:gold_paid)
     """
     cartparam = {"cart_id": cart_id}
